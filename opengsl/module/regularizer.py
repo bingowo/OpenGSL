@@ -56,11 +56,11 @@ def smoothness_regularizer(x, adj, style=None, symmetric=False):
     if symmetric:
         adj = (adj.t() + adj) / 2
     if style is None:
-        L = torch.diag(adj.sum(1)) - adj
+        L = torch.diag(adj.sum(1), device=device) - adj
     elif style == 'row':
-        L = torch.eye(n).to(device) - normalize(adj, 'row')
+        L = torch.eye(n, device=device) - normalize(adj, 'row')
     elif style == 'symmetric':
-        L = torch.eye(n).to(device) - normalize(adj, 'symmetric', add_loop=False)
+        L = torch.eye(n, device=device) - normalize(adj, 'symmetric', add_loop=False)
     else:
         raise KeyError("The normalize style is not provided.")
     return torch.trace(x.T @ L @ x)

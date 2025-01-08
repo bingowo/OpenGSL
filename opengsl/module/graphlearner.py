@@ -129,7 +129,7 @@ class OneLayerNN(GraphLearner):
         h = x @ self.W
         d = torch.abs(torch.index_select(h, 0, edge[0]) - torch.index_select(h, 0, edge[1]))
         values = F.relu(d @ self.a).squeeze(1)
-        adj = torch.sparse.FloatTensor(edge, values, [n,n]).to(device)
+        adj = torch.sparse.FloatTensor(edge, values, [n,n], device=device)
         adj = torch.sparse.softmax(adj, 1)
         if return_h:
             return adj.coalesce(), h

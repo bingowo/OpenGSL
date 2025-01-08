@@ -65,7 +65,7 @@ def row_nomalize(mx):
     # r_inv[np.isinf(r_inv)] = 0.
     # r_mat_inv = sp.diags(r_inv)
     # mx = r_mat_inv.dot(mx)
-    # mx = torch.tensor(mx).to(device)
+    # mx = torch.tensor(mx, device=device)
 
     r_sum = mx.sum(1)
     r_inv = r_sum.pow(-1).flatten()
@@ -98,7 +98,7 @@ def normalize_sp_tensor_tractable(adj, add_loop=True):
 
 def normalize_tensor(adj, add_loop=True):
     device = adj.device
-    adj_loop = adj + torch.eye(adj.shape[0]).to(device) if add_loop else adj
+    adj_loop = adj + torch.eye(adj.shape[0], device=device) if add_loop else adj
     rowsum = adj_loop.sum(1)
     r_inv = rowsum.pow(-1/2).flatten()
     r_inv[torch.isinf(r_inv)] = 0.
@@ -112,7 +112,7 @@ def normalize_sp_tensor(adj, add_loop=True):
     device = adj.device
     adj = sparse_tensor_to_scipy_sparse(adj)
     adj = normalize_sp_matrix(adj, add_loop)
-    adj = scipy_sparse_to_sparse_tensor(adj).to(device)
+    adj = scipy_sparse_to_sparse_tensor(adj, device=device)
     return adj
 
 
@@ -145,15 +145,15 @@ def knn(adj, K, self_loop=True, set_value=None, sparse_out=False):
         assert torch.max(indices) < adj.shape[1]
         if sparse_out:
             n = adj.shape[0]
-            new_indices = torch.stack([torch.arange(n).view(-1, 1).expand(-1, int(K)).contiguous().flatten().to(device),
+            new_indices = torch.stack([torch.arange(n, device=device).view(-1, 1).expand(-1, int(K)).contiguous().flatten(),
                                    indices.flatten()])
             new_values = values.flatten()
             return torch.sparse.FloatTensor(new_indices, new_values, [n, n]).coalesce()
         else:
-            mask = torch.zeros(adj.shape).to(device)
-            mask[torch.arange(adj.shape[0]).view(-1, 1), indices] = 1.
+            mask = torch.zeros(adj.shape, device=device)
+            mask[torch.arange(adj.shape[0], device=device).view(-1, 1), indices] = 1.
             if not self_loop:
-                mask[torch.arange(adj.shape[0]).view(-1, 1), torch.arange(adj.shape[0]).view(-1, 1)] = 0
+                mask[torch.arange(adj.shape[0], device=device).view(-1, 1), torch.arange(adj.shape[0], device=device).view(-1, 1)] = 0
             mask.requires_grad = False
             new_adj = adj * mask
             if set_value:
@@ -189,7 +189,7 @@ def to_undirected(adj):
         indices_t = adj.indices()[[1,0]]
         new_indices = torch.cat([adj.indices(), indices_t], dim=1)
         new_indices = torch.unique(new_indices, dim=1)
-        new_values = torch.ones(new_indices.shape[1]).to(device)
+        new_values = torch.ones(new_indices.shape[1], device=device)
         new_adj = torch.sparse.FloatTensor(new_indices, new_values, [n, n])
         return new_adj
     else:
@@ -242,7 +242,7 @@ def removeselfloop(adj):
         pass
     else:
         n = adj.shape[0]
-        mask = torch.eye(n).bool().to(adj.device)
+        mask = torch.eye(n, device=adj.device).bool()
         return adj * ~mask
 
 

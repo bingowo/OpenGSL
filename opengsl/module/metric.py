@@ -151,7 +151,7 @@ class InnerProduct(nn.Module):
 #         self.normalize = normalize
 #         # self.Q = nn.Parameter(torch.FloatTensor(num_pers, d_in, d_in))
 #         self.Q = nn.Parameter(torch.eye(d_in).unsqueeze(0).repeat(num_pers,1,1))
-#         # self.Q = torch.eye(d_in).unsqueeze(0).repeat(num_pers,1,1).to('cuda:0')
+#         # self.Q = torch.eye(d_in, device='cuda:0').unsqueeze(0).repeat(num_pers,1,1)
 #         # self.reset_parameters()
 #
 #     def reset_parameters(self):
@@ -216,7 +216,7 @@ class GeneralizedMahalanobis(nn.Module):
             d = torch.index_select(x, 0, edge[0]) - torch.index_select(y, 0, edge[1])
             D = torch.sqrt(((d @ M) * d).sum(1))
             D = torch.exp(-D / (2*self.sigma**2))
-            return torch.sparse.FloatTensor(edge, D, [x.shape[0], y.shape[0]]).to(device)
+            return torch.sparse.FloatTensor(edge, D, [x.shape[0], y.shape[0]], device=device)
         else:
             D = torch.zeros(x.shape[0], y.shape[0])
             for i in range(x.shape[0]):

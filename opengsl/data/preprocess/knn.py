@@ -13,7 +13,7 @@ def knn(feature, k):
     adj[np.arange(n_nodes).repeat(k + 1), col] = 1
     # remove self-loop
     np.fill_diagonal(adj, 0)
-    adj = torch.tensor(adj).to(device)
+    adj = torch.tensor(adj, device=device)
     return adj
 
 if __name__ == '__main__':

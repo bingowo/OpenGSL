@@ -16,7 +16,7 @@ class BMGCN(nn.Module):
 
         bias = np.ones((num_classes, num_classes))
         np.fill_diagonal(bias, enhance)
-        self.bias = torch.FloatTensor(bias).to(device)
+        self.bias = torch.FloatTensor(bias, device=device)
 
     def forward(self, feature, adj, idx, label, labels_oneHot, train_idx):
         B = F.softmax(self.mlp(feature))
