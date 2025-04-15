@@ -44,6 +44,13 @@ class GRCNSolver(Solver):
         self.adj = torch.sparse.FloatTensor(edges, torch.ones(edges.shape[1]), [self.n_nodes, self.n_nodes]).to(self.device).coalesce()
         self.model = GRCN(self.n_nodes, self.dim_feats, self.num_targets, self.device, self.conf).to(self.device)
 
+        from opengsl.module.functional import normalize
+        adj = self.adj.to_dense()
+        if conf.dataset['add_loop']:
+            adj = adj + torch.eye(adj.shape[0],device='cuda')
+        self.Q = conf.training['alpha']*normalize(adj.to_dense(), style='row') \
+                    + (1-conf.training['alpha'])*torch.ones_like(adj, device="cuda")/self.n_nodes
+        self.model.Q = self.Q
 
     def learn_nc(self, debug=False):
         '''
@@ -69,7 +76,7 @@ class GRCNSolver(Solver):
             self.optim2.zero_grad()
 
             # forward and backward
-            output, _= self.model(self.feats, self.adj)
+            output, _= self.model(self.feats, self.adj, update_beta=self.conf.training['update_beta'])
             loss_train = self.loss_fn(output[self.train_mask], self.labels[self.train_mask])
             acc_train = self.metric(self.labels[self.train_mask].cpu().numpy(), output[self.train_mask].detach().cpu().numpy())
             loss_train.backward()
@@ -90,6 +97,7 @@ class GRCNSolver(Solver):
                 if self.conf.analysis['save_graph']:
                     self.adjs['new'] = adjs['new'].to_dense().detach().clone()
                     self.adjs['final'] = adjs['final'].to_dense().detach().clone()
+                # print("beta: ", self.model.beta_vector.T.detach().cpu().numpy())
 
             # print
 

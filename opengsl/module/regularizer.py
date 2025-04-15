@@ -56,7 +56,7 @@ def smoothness_regularizer(x, adj, style=None, symmetric=False):
     if symmetric:
         adj = (adj.t() + adj) / 2
     if style is None:
-        L = torch.diag(adj.sum(1), device=device) - adj
+        L = torch.diag(adj.sum(1)) - adj
     elif style == 'row':
         L = torch.eye(n, device=device) - normalize(adj, 'row')
     elif style == 'symmetric':

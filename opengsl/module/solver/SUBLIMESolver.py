@@ -130,8 +130,10 @@ class SUBLIMESolver(Solver):
                     self.result['valid'] = acc_val
                     self.result['train'] = acc_train
                     self.weights = deepcopy(model.state_dict())
-                    current_adj = dgl_graph_to_torch_sparse(adj).to_dense() if self.conf.sparse else adj
-                    self.adjs['final'] = current_adj.detach().clone()
+                    ## low speed for dgl_graph_to_torch_sparse
+                    # current_adj = dgl_graph_to_torch_sparse(adj).to_dense() if self.conf.sparse else adj
+                    # self.adjs['final'] = current_adj.detach().clone()
+                    self.adjs['final'] = None
                     self.best_graph_test = deepcopy(adj)
 
             if debug:
