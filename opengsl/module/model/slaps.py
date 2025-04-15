@@ -101,6 +101,11 @@ class GCN_DAE(torch.nn.Module):
 
     def get_adj(self, h):
         Adj_ = self.graph_gen(h)
+        
+        adj_diff = Adj_
+        s_positive = adj_diff.pow(1 / (self.gamma - 1))
+        s = s_positive * self.Q
+        
         Adj_ = symmetry(Adj_)
         Adj_ = normalize(Adj_, self.normalization, False)
         return Adj_
@@ -154,13 +159,28 @@ class SLAPS(torch.nn.Module):
                              mlp_epochs=self.conf.model['mlp_epochs'], mlp_act=self.conf.model['mlp_act'])
         self.gcn_c = GCN_C(self.conf.model, in_channels=num_features, hidden_channels=self.conf.model['hidden'], out_channels=num_classes,
                             num_layers=self.conf.model['nlayers'], dropout=self.conf.model['dropout2'], dropout_adj=self.conf.model['dropout_adj2'])
+        
+        self.beta_vector  = torch.full(
+            size = (num_nodes,1), 
+            fill_value = conf.training['beta_init'],
+            dtype = torch.float32,
+            device = torch.device("cuda"))
+        self.beta_vector  = torch.nn.Parameter(self.beta_vector)
+        self.gamma = conf.training['gamma']
+        self.gamma_star = self.gamma / (self.gamma - 1)
+        self.gcn_dae.gamma = self.gamma
+        self.gcn_dae.gamma_star = self.gamma_star
+        
+        self.optimizer_beta  = torch.optim.Adam([
+            {'params': self.beta_vector, 'lr': conf.training['lr_beta'], 'weight_decay': 0}
+        ])
 
     def reset_parameters(self):
         for child in self.children():
             if hasattr(child, 'reset_parameters'):
                 child.reset_parameters()
 
-    def forward(self, features):
+    def forward(self, features, update_beta=False):
         loss_dae, Adj = self.get_loss_masked_features(features)
         logits = self.gcn_c(features, Adj)
         if len(logits.shape) > 1:

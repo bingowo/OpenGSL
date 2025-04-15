@@ -21,6 +21,7 @@ dataset:
   feat_norm: false
   cora_split: false # for cora,citeseer and pubmed
   feat_type: 'continuous' # 'continuous' for pubmed, amazon-ratings, questions, roman-empire and wiki-cooc, otherwise 'binary'
+  sparse: true
 
 training:
   data_cpu: false # whether data should be placed in cpu instead of gpu to save space
