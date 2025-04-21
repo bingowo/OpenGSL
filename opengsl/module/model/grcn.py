@@ -1,5 +1,4 @@
 import torch
-from torch.nn import functional as F
 from opengsl.module.functional import normalize
 from opengsl.module.encoder import GCNDiagEncoder, GNNEncoder_OpenGSL, APPNPEncoder, GINEncoder
 from opengsl.module.fuse import Interpolate
@@ -38,40 +37,16 @@ class GRCN(torch.nn.Module):
         self.knn = KNN(self.K, sparse_out=True)
         self.sym = Symmetry(1)
         self.fuse = Interpolate(1, 1)
-        
-        self.conf = conf
-        self.beta_vector  = torch.full(
-            size = (num_nodes,1), 
-            fill_value = conf.training['beta_init'],
-            dtype = torch.float32,
-            device = torch.device("cuda"))
-        self.beta_vector  = torch.nn.Parameter(self.beta_vector)
-        self.gamma = conf.training['gamma']
-        self.gamma_star = self.gamma / (self.gamma - 1)
-        
-        self.optimizer_beta  = torch.optim.Adam([
-            {'params': self.beta_vector, 'lr': conf.training['lr_beta'], 'weight_decay': 0}
-        ])
-        
-    def beta_update(self, feats, adj):
-        Q = self.Q
-        # emb = self.gsl(feats, normalize(adj, add_loop=self.conf.dataset['add_loop'])) # GCN
-        node_embeddings = self._node_embeddings(feats, adj)
-        Adj_new = self.cal_similarity_graph(node_embeddings)
-        Adj_new = self._sparse_graph(Adj_new)
-        
-        new_adj = Adj_new.to_dense()
-        # adj = torch.relu(new_adj - self.beta_vector.expand(-1, new_adj.shape[1])) ** self.gamma_star
-        adj = new_adj ** self.gamma_star
-        loss_r = (Q * adj).sum(dim=-1).pow(1 / self.gamma_star)
-        loss_beta = (loss_r + self.beta_vector.squeeze()).sum()
-        
-        self.optimizer_beta.zero_grad()
-        loss_beta.backward()
-        self.optimizer_beta.step()
-        
-        return loss_beta
     
+    def add_function(self, n_nodes, adj, conf):
+        from opengsl.module.attention import Unified_attention
+        self.attention = Unified_attention(n_nodes, adj, conf).to('cuda')
+        
+        self.attention.custom_similarity = self.cal_similarity_graph
+        self.attention.custom_sparsify = self._sparse_graph
+        self.attention.custom_fuse = self.fuse
+        self.attention.custom_norm = self.normalize_a
+
     def reset_parameters(self):
         for child in self.children():
             if hasattr(child, 'reset_parameters'):
@@ -102,33 +77,19 @@ class GRCN(torch.nn.Module):
             node_embeddings = self.normalize_e(node_embeddings)
         return node_embeddings
 
-    def forward(self, input, Adj, update_beta=False):
+    def forward(self, input, Adj):
         adjs = {}
         Adj.requires_grad = False
-        
-        if update_beta:
-            self.beta_update(input, Adj)
-        
         node_embeddings = self._node_embeddings(input, Adj)
-        Adj_new = self.cal_similarity_graph(node_embeddings)
-        Adj_new = self._sparse_graph(Adj_new)
         
-        adj_diff = Adj_new
-        if (1 / (self.gamma - 1)) == 1:
-            s_positive = adj_diff
-        else:
-            s_positive = adj_diff.pow(1 / (self.gamma - 1))
-        s = s_positive * self.Q
-        s = normalize(s, style='row')
-        Adj_new = s
+        Adj_new = self.attention.similarity(node_embeddings)
+        Adj_new = self.attention.sparsify(Adj_new)
+        Adj_final = self.attention.fuse(Adj_new, Adj)
+        if Adj_final.is_sparse: Adj_final = Adj_final.coalesce()
+        Adj_final_norm = self.attention.norm(Adj_final)
         
-        if self.conf.training['original_graph']:
-            Adj_final = self.fuse(Adj_new, Adj)
-            Adj_final_norm = self.normalize_a(Adj_final.coalesce())
-        else:
-            Adj_final = Adj_new
-            Adj_final_norm = self.normalize_a(Adj_new.coalesce())
-        x = self.conv_task(input, SparseTensor.from_torch_sparse_coo_tensor(Adj_final_norm))
+        if Adj_final_norm.is_sparse: Adj_final_norm = SparseTensor.from_torch_sparse_coo_tensor(Adj_final_norm)
+        x = self.conv_task(input, Adj_final_norm)
 
         adjs['new'] = Adj_new
         adjs['final'] = Adj_final

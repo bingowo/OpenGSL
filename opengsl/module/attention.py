@@ -1,0 +1,135 @@
+import torch
+from opengsl.module.functional import normalize, symmetry, knn, enn, apply_non_linearity, removeselfloop
+from opengsl.module.metric import InnerProduct
+import torch.nn as nn
+
+
+class Unified_attention(nn.Module):
+    """
+        A unified attention mechanism for GSL ans GT.
+        Four steps:
+            1. Similarity Computation
+            2. Sparsification.
+            3. fuse Q
+            3. Normalization.
+    """
+    def __init__(self, n_nodes, Q, conf=None):
+        super(Unified_attention, self).__init__()
+        if getattr(conf, 'unify', None) is None:
+            conf.unify = {}
+        self.conf = conf
+        self.use_attention = conf.unify.get('use_attention', False)
+        self.use_similarity = conf.unify.get('use_similarity', False)
+        self.update_beta = conf.unify.get('update_beta', False)
+        self.use_fuse = conf.unify.get('use_fuse', False)
+        self.use_norm = conf.unify.get('use_norm', False)
+        self.custom_similarity = lambda z: z@z.T
+        self.custom_sparsify = lambda adj: adj
+        self.custom_fuse = lambda adj, original_adj: adj
+        self.custom_norm = lambda adj: adj
+        '''
+            def custom_func(): xxx
+            self.custom_attention = custom_func
+        '''
+        
+        self.gamma = conf.unify.get('gamma', 2)
+        self.gamma_star = self.gamma / (self.gamma - 1)
+        
+        self.alpha = conf.unify.get('alpha', 0)
+        if conf.dataset.get('add_loop', False):
+            Q = Q + torch.eye(Q.shape[0],device='cuda').to_sparse()
+        self.Q = normalize(Q, style='row')
+        
+        if self.use_attention and self.use_similarity:
+            self.diag = conf.unify.get('diag', False)
+            dim = conf.unify['dim']
+            self.W = nn.Linear(dim, dim, bias=False, device='cuda')
+            self.optimizer_W = torch.optim.Adam([
+                {'params': self.W.parameters(), 'lr': conf.training['lr_graph'], 'weight_decay': 0}
+            ])
+        
+        if self.use_attention and self.update_beta:
+            self.beta_vector = nn.Parameter(
+                torch.full(
+                    size=(n_nodes, 1),
+                    fill_value=conf.unify.get('beta_init', 0.5),
+                    dtype=torch.float32,
+                    device=torch.device("cuda")
+                )
+            )
+            self.optimizer_beta  = torch.optim.SGD([
+                {'params': self.beta_vector, 'lr': conf.unify['lr_beta'], 'weight_decay': 0}
+            ])
+
+    def reset_parameters(self):
+        for child in self.children():
+            if hasattr(child, 'reset_parameters'):
+                child.reset_parameters()
+        if self.use_attention and self.update_beta:
+            self.beta_vector.data.fill_(self.conf.unify.get('beta_init', 0.5))
+        if self.use_attention and self.use_similarity:
+            if self.diag:
+                self.W.weight.data.copy_(torch.eye(self.conf.unify['dim'], device='cuda'))
+            else:
+                self.W.reset_parameters()
+            
+    def step(self):
+        if self.use_attention and self.use_similarity:
+            self.optimizer_W.step()
+        
+    def add_Q(self, adj):
+        if self.alpha == 1:
+            adj = adj * self.Q
+        elif self.alpha == 0:
+            adj = adj
+        else:
+            adj = (1-self.alpha) * adj + self.alpha * (adj * self.Q)
+        adj = adj / adj.shape[0]
+        return adj
+            
+    def similarity(self, embdings):
+        if self.use_attention and self.use_similarity:
+            if self.training:
+                self.optimizer_W.zero_grad()
+            if self.diag:
+                sim = embdings * torch.diag(self.W.weight) @ embdings.T
+            else:
+                sim =  self.W(embdings) @ embdings.T
+        else:
+            sim = self.custom_similarity(embdings)
+        return sim
+    
+    def sparsify(self, adj):
+        if self.use_attention and self.update_beta:
+            adj = torch.relu(adj - self.beta_vector.expand(-1, adj.shape[1]))
+        else:
+            adj = self.custom_sparsify(adj)
+            
+        if self.use_attention and self.update_beta: self.beta_update(adj)
+        if self.use_attention: adj = adj ** (1 / (self.gamma - 1))
+        return adj
+    
+    def fuse(self, adj, original_adj=None):
+        if self.use_attention and self.use_fuse:
+            adj = self.add_Q(adj)
+        else:
+            adj = self.custom_fuse(adj, original_adj)
+        return adj
+    
+    def norm(self, adj):
+        if self.use_attention and self.use_norm:
+            adj = normalize(adj, style='row')
+        else:
+            adj = self.custom_norm(adj)
+        return adj
+        
+    def beta_update(self, adj):
+        adj = adj.detach()
+        loss_beta = (self.add_Q(adj.to_dense() ** self.gamma_star).sum(dim=-1).pow(1 / self.gamma_star) + self.beta_vector.squeeze()).sum()        
+        
+        if self.training:
+            self.optimizer_beta.zero_grad()
+            loss_beta.backward()
+            self.optimizer_beta.step()
+        
+        return loss_beta
