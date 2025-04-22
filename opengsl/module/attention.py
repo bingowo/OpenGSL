@@ -1,7 +1,7 @@
 import torch
 from opengsl.module.functional import normalize, symmetry, knn, enn, apply_non_linearity, removeselfloop
-from opengsl.module.metric import InnerProduct
 import torch.nn as nn
+import torch.nn.functional as F
 import math
 torch.autograd.set_detect_anomaly(True)
 
@@ -95,12 +95,14 @@ class Unified_attention(nn.Module):
         adj = adj / adj.shape[0]
         return adj
 
-    def sparse_relu(self, sparse_tensor):
-        sparse_tensor = sparse_tensor.coalesce()
-        indices = sparse_tensor.indices()
-        values = torch.clamp(sparse_tensor.values(), min=0) + self.eps
-        return torch.sparse_coo_tensor(indices, values, sparse_tensor.shape).coalesce()
-
+    def relu_with_eps(self, tensor):
+        if tensor.is_sparse:
+            if not tensor.is_coalesced(): tensor = tensor.coalesce()
+            values = tensor.values()
+            new_values = F.relu(values) + self.eps
+            return torch.sparse_coo_tensor(tensor.indices(), new_values, tensor.shape).coalesce()
+        else:
+            return F.relu(tensor) + self.eps
     
     def similarity(self, embdings):
         if self.use_attention and self.use_similarity:
@@ -121,7 +123,7 @@ class Unified_attention(nn.Module):
         else:
             adj = self.custom_sparsify(adj)
         if self.use_attention:
-            adj = self.sparse_relu(adj)
+            adj = self.relu_with_eps(adj)
             if self.update_beta: self.beta_update(adj)
             adj = adj ** (1 / (self.gamma - 1))
         return adj
