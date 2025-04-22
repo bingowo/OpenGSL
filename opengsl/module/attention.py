@@ -120,9 +120,10 @@ class Unified_attention(nn.Module):
             adj = torch.relu(adj - self.beta_vector.expand(-1, adj.shape[1]))
         else:
             adj = self.custom_sparsify(adj)
-        adj = self.sparse_relu(adj)
-        if self.use_attention and self.update_beta: self.beta_update(adj)
-        if self.use_attention: adj = adj ** (1 / (self.gamma - 1))
+        if self.use_attention:
+            adj = self.sparse_relu(adj)
+            if self.update_beta: self.beta_update(adj)
+            adj = adj ** (1 / (self.gamma - 1))
         return adj
     
     def fuse(self, adj, original_adj=None):
