@@ -41,14 +41,6 @@ class SLAPSSolver(Solver):
         print("Solver Version : [{}]".format("slaps"))
         self.model = SLAPS(self.n_nodes, self.dim_feats, self.num_targets, self.feats, self.device, self.conf).to(
             self.device)
-        
-        from opengsl.module.functional import normalize
-        adj = self.adj.to_dense()
-        if conf.dataset.get('add_loop', False):
-            adj = adj + torch.eye(adj.shape[0],device='cuda')
-        self.Q = conf.training['alpha']*normalize(adj.to_dense(), style='row') \
-                    + (1-conf.training['alpha'])*torch.ones_like(adj, device="cuda")/self.n_nodes
-        self.model.gcn_dae.Q = self.Q
 
     def learn_nc(self, debug=False):
         '''
@@ -73,7 +65,7 @@ class SLAPSSolver(Solver):
             self.optim.zero_grad()
 
             # forward and backward
-            output, loss_dae, adj = self.model(self.feats, update_beta=self.conf.training['update_beta'])
+            output, loss_dae, adj = self.model(self.feats)
             if epoch < self.conf.training['n_epochs'] // self.conf.training['epoch_d']:
                 self.model.gcn_c.eval()
                 loss_train = self.conf.training['lamda'] * loss_dae
@@ -97,7 +89,6 @@ class SLAPSSolver(Solver):
                 self.result['train'] = acc_train
                 self.weights = deepcopy(self.model.state_dict())
                 self.best_graph = adj.clone()
-                # print("beta: ", self.model.beta_vector.T.detach().cpu().numpy())
 
             # print
             if debug:

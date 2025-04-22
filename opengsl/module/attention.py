@@ -2,7 +2,8 @@ import torch
 from opengsl.module.functional import normalize, symmetry, knn, enn, apply_non_linearity, removeselfloop
 from opengsl.module.metric import InnerProduct
 import torch.nn as nn
-
+import math
+torch.autograd.set_detect_anomaly(True)
 
 class Unified_attention(nn.Module):
     """
@@ -34,6 +35,7 @@ class Unified_attention(nn.Module):
         
         self.gamma = conf.unify.get('gamma', 2)
         self.gamma_star = self.gamma / (self.gamma - 1)
+        self.eps = 1e-6
         
         self.alpha = conf.unify.get('alpha', 0)
         if conf.dataset.get('add_loop', False):
@@ -43,9 +45,14 @@ class Unified_attention(nn.Module):
         if self.use_attention and self.use_similarity:
             self.diag = conf.unify.get('diag', False)
             dim = conf.unify['dim']
-            self.W = nn.Linear(dim, dim, bias=False, device='cuda')
+            if self.diag:
+                self.W = nn.Parameter(torch.ones(dim, device='cuda'))
+                self.W.data.fill_(1.0)
+            else:
+                self.W = nn.Parameter(torch.empty(dim, dim, device='cuda'))
+                nn.init.kaiming_uniform_(self.W, a=math.sqrt(5))
             self.optimizer_W = torch.optim.Adam([
-                {'params': self.W.parameters(), 'lr': conf.training['lr_graph'], 'weight_decay': 0}
+                {'params': self.W, 'lr': conf.training['lr_graph'], 'weight_decay': 0}
             ])
         
         if self.use_attention and self.update_beta:
@@ -69,9 +76,10 @@ class Unified_attention(nn.Module):
             self.beta_vector.data.fill_(self.conf.unify.get('beta_init', 0.5))
         if self.use_attention and self.use_similarity:
             if self.diag:
-                self.W.weight.data.copy_(torch.eye(self.conf.unify['dim'], device='cuda'))
+                with torch.no_grad():
+                    self.W.fill_(1.0)
             else:
-                self.W.reset_parameters()
+                nn.init.kaiming_uniform_(self.W, a=math.sqrt(5))
             
     def step(self):
         if self.use_attention and self.use_similarity:
@@ -86,15 +94,23 @@ class Unified_attention(nn.Module):
             adj = (1-self.alpha) * adj + self.alpha * (adj * self.Q)
         adj = adj / adj.shape[0]
         return adj
-            
+
+    def sparse_relu(self, sparse_tensor):
+        sparse_tensor = sparse_tensor.coalesce()
+        indices = sparse_tensor.indices()
+        values = torch.clamp(sparse_tensor.values(), min=0) + self.eps
+        return torch.sparse_coo_tensor(indices, values, sparse_tensor.shape).coalesce()
+
+    
     def similarity(self, embdings):
         if self.use_attention and self.use_similarity:
             if self.training:
                 self.optimizer_W.zero_grad()
             if self.diag:
-                sim = embdings * torch.diag(self.W.weight) @ embdings.T
+                weighted = embdings * self.W
             else:
-                sim =  self.W(embdings) @ embdings.T
+                weighted = embdings @ self.W
+            sim = weighted @ embdings.T
         else:
             sim = self.custom_similarity(embdings)
         return sim
@@ -104,7 +120,7 @@ class Unified_attention(nn.Module):
             adj = torch.relu(adj - self.beta_vector.expand(-1, adj.shape[1]))
         else:
             adj = self.custom_sparsify(adj)
-            
+        adj = self.sparse_relu(adj)
         if self.use_attention and self.update_beta: self.beta_update(adj)
         if self.use_attention: adj = adj ** (1 / (self.gamma - 1))
         return adj
