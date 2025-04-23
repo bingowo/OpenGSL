@@ -78,7 +78,7 @@ def row_nomalize(mx):
 
 def row_normalize_sp(mx):
     adj = mx.coalesce()
-    inv_sqrt_degree = 1. / (torch.sparse.sum(mx, dim=1).values() + 1e-12)
+    inv_sqrt_degree = 1. / (torch.sparse.sum(mx, dim=1).to_dense() + 1e-12)
     D_value = inv_sqrt_degree[adj.indices()[0]]
     new_values = adj.values() * D_value
     return torch.sparse.FloatTensor(adj.indices(), new_values, adj.size())
