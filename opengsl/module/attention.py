@@ -3,7 +3,7 @@ from opengsl.module.functional import normalize, symmetry, knn, enn, apply_non_l
 import torch.nn as nn
 import torch.nn.functional as F
 import math
-torch.autograd.set_detect_anomaly(True)
+# torch.autograd.set_detect_anomaly(True)
 
 class Unified_attention(nn.Module):
     """
@@ -52,7 +52,7 @@ class Unified_attention(nn.Module):
                 self.W = nn.Parameter(torch.empty(dim, dim, device='cuda'))
                 nn.init.kaiming_uniform_(self.W, a=math.sqrt(5))
             self.optimizer_W = torch.optim.Adam([
-                {'params': self.W, 'lr': conf.training['lr_graph'], 'weight_decay': 0}
+                {'params': self.W, 'lr': conf.training['lr_dae'], 'weight_decay': 0}
             ])
         
         if self.use_attention and self.update_beta:
@@ -91,7 +91,8 @@ class Unified_attention(nn.Module):
         elif self.alpha == 0:
             adj = adj
         else:
-            adj = (1-self.alpha) * adj + self.alpha * (adj * self.Q)
+            adj = (1 - self.alpha) * adj + self.alpha * (adj * self.Q.to_dense())
+
         adj = adj / adj.shape[0]
         return adj
 

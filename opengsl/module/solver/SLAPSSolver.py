@@ -41,6 +41,8 @@ class SLAPSSolver(Solver):
         print("Solver Version : [{}]".format("slaps"))
         self.model = SLAPS(self.n_nodes, self.dim_feats, self.num_targets, self.feats, self.device, self.conf).to(
             self.device)
+        
+        self.model.gcn_dae.graph_gen.add_function(self.n_nodes, self.adj, conf)
 
     def learn_nc(self, debug=False):
         '''
@@ -76,6 +78,7 @@ class SLAPSSolver(Solver):
                                     output[self.train_mask].detach().cpu().numpy())
             loss_train.backward()
             self.optim.step()
+            self.model.gcn_dae.graph_gen.attention.step()
 
             # Evaluate
             loss_val, acc_val = self.evaluate(self.val_mask)
@@ -89,6 +92,8 @@ class SLAPSSolver(Solver):
                 self.result['train'] = acc_train
                 self.weights = deepcopy(self.model.state_dict())
                 self.best_graph = adj.clone()
+                if self.conf.unify.get('use_attention',False) and self.conf.unify.get('update_beta', False):
+                    print("beta: ", self.model.gcn_dae.graph_gen.attention.beta_vector.T.detach().cpu().numpy())
 
             # print
             if debug:

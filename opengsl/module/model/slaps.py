@@ -66,13 +66,23 @@ class MLP(torch.nn.Module):
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
+                
+    def add_function(self, n_nodes, adj, conf):
+        from opengsl.module.attention import Unified_attention
+        self.attention = Unified_attention(n_nodes, adj, conf).to('cuda')
+        
+        self.attention.custom_similarity = InnerProduct()
+        self.attention.custom_sparsify = lambda x: knn(x, self.k + 1)
+        self.attention.custom_fuse = lambda x, original_adj: x
+        self.attention.custom_norm = lambda x: x
 
     def forward(self, features):
         embeddings = self.internal_forward(features)
         embeddings = F.normalize(embeddings, dim=1, p=2)
-        similarities = InnerProduct()(embeddings)
-        similarities = knn(similarities, self.k + 1)
+        similarities = self.attention.similarity(embeddings)
+        similarities = self.attention.sparsify(similarities)
         similarities = apply_non_linearity(similarities, self.non_linearity, self.i)
+        similarities = self.attention.fuse(similarities, self.features)
         return similarities
 
 
