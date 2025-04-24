@@ -207,6 +207,13 @@ class IDGL(nn.Module):
                                                topk=conf.gsl['graph_learn_topk2'],
                                                epsilon=conf.gsl['graph_learn_epsilon2'],
                                                num_pers=conf.gsl['graph_learn_num_pers'])
+        
+    def add_function(self, n_nodes, adj, conf):
+        from opengsl.module.attention import Unified_attention
+        self.attention = Unified_attention(n_nodes, adj, conf).to('cuda')
+        self.conf = conf
+        
+        self.attention.custom_sparsify = lambda adj: adj
 
     def reset_parameters(self):
         for child in self.children():
@@ -218,10 +225,12 @@ class IDGL(nn.Module):
 
         if self.scalable_run:
             node_anchor_adj = graph_learner(node_features, anchor_features)
+            node_anchor_adj = self.attention.sparsify(node_anchor_adj)
             return node_anchor_adj
 
         else:
             raw_adj = graph_learner(node_features)
+            raw_adj = self.attention.sparsify(raw_adj)
 
             assert raw_adj.min().item() >= 0
             adj = raw_adj / torch.clamp(torch.sum(raw_adj, dim=-1, keepdim=True), min=1e-12)   # 归一化

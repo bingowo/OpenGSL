@@ -100,10 +100,10 @@ class Unified_attention(nn.Module):
         if tensor.is_sparse:
             if not tensor.is_coalesced(): tensor = tensor.coalesce()
             values = tensor.values()
-            new_values = F.relu(values) + self.eps
+            new_values = torch.clamp(values, min=self.eps)
             return torch.sparse_coo_tensor(tensor.indices(), new_values, tensor.shape).coalesce()
         else:
-            return F.relu(tensor) + self.eps
+            return torch.clamp(tensor, min=self.eps)
     
     def similarity(self, embdings):
         if self.use_attention and self.use_similarity:

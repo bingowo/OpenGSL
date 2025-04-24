@@ -47,6 +47,8 @@ class IDGLSolver(Solver):
             self.normalized_adj = self.normalized_adj.to_dense()
         self.model = IDGL(self.conf, self.dim_feats, self.num_targets).to(self.device)
 
+        self.model.add_function(self.n_nodes, self.adj, conf)
+
     def _run_whole_epoch(self, mode='train', debug=False):
         # prepare
         training = mode == 'train'
