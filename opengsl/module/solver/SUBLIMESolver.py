@@ -54,6 +54,15 @@ class SUBLIMESolver(Solver):
         self.model = GCL(nlayers=self.conf.n_layers, in_dim=self.dim_feats, hidden_dim=self.conf.n_hidden,
                          emb_dim=self.conf.n_embed, proj_dim=self.conf.n_proj, dropout=self.conf.dropout,
                          dropout_adj=self.conf.dropedge_rate, sparse=self.conf.sparse, conf=self.conf).to(self.device)
+        
+        self.add_function(self.n_nodes, self.adj, conf)
+
+    def add_function(self, n_nodes, adj, conf):
+        from opengsl.module.attention import Unified_attention
+        self.attention = Unified_attention(n_nodes, adj, conf).to('cuda')
+        
+        self.attention.custom_sparsify = lambda x: x
+        self.attention.custom_fuse = lambda x, original_adj: x
 
     def loss_gcl(self, model, graph_learner, features, anchor_adj):
 
@@ -74,9 +83,13 @@ class SUBLIMESolver(Solver):
             features_v2 = copy.deepcopy(features)
 
         learned_adj = graph_learner(features)   # 这个learned adj是有自环的
+        learned_adj = self.attention.sparsify(learned_adj)
+        learned_adj = self.attention.fuse(learned_adj, anchor_adj)
         if not self.conf.sparse:
             learned_adj = symmetry(learned_adj)
             learned_adj = normalize(learned_adj, add_loop=False)
+        else:
+            learned_adj = torch_sparse_to_dgl_graph(learned_adj)
 
         z2, _ = model(features_v2, learned_adj, 'learner')
 

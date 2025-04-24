@@ -9,7 +9,6 @@ from opengsl.module.encoder import AttentiveEncoder, MLPEncoder, GNNEncoder_Open
 from opengsl.module.metric import WeightedCosine, Cosine
 from opengsl.module.transform import KNN, NonLinear
 from opengsl.module.functional import knn_fast
-import dgl
 
 
 class GraphLearner(nn.Module):
@@ -194,8 +193,13 @@ class AttLearner(GraphLearner):
             cols_ = torch.cat((cols, rows))
             values_ = torch.cat((values, values))
             values_ = self.non_linear(values_)
-            adj = dgl.graph((rows_, cols_), num_nodes=x.shape[0], device='cuda')
-            adj.edata['w'] = values_
+            # # 构造稀疏邻接矩阵（DGL 格式）
+            # adj = dgl.graph((rows_, cols_), num_nodes=x.shape[0], device='cuda')
+            # adj.edata['w'] = values_
+            # 构造稀疏邻接矩阵（PyTorch Sparse COO 格式）
+            indices = torch.stack([rows_, cols_], dim=0)  # shape: [2, num_edges]
+            num_nodes = x.shape[0]
+            adj = torch.sparse_coo_tensor(indices, values_, size=(num_nodes, num_nodes), device=x.device, dtype=values_.dtype)
             return adj
         else:
             x = self.encoder(x, None)
@@ -263,8 +267,13 @@ class MLPLearner(GraphLearner):
             cols_ = torch.cat((cols, rows))
             values_ = torch.cat((values, values))
             values_ = self.non_linear(values_)
-            adj = dgl.graph((rows_, cols_), num_nodes=x.shape[0], device='cuda')
-            adj.edata['w'] = values_
+            # # 构造稀疏邻接矩阵（DGL 格式）
+            # adj = dgl.graph((rows_, cols_), num_nodes=x.shape[0], device='cuda')
+            # adj.edata['w'] = values_
+            # 构造稀疏邻接矩阵（PyTorch Sparse COO 格式）
+            indices = torch.stack([rows_, cols_], dim=0)  # shape: [2, num_edges]
+            num_nodes = x.shape[0]
+            adj = torch.sparse_coo_tensor(indices, values_, size=(num_nodes, num_nodes), device=x.device, dtype=values_.dtype)
             return adj
         else:
             x = self.encoder(x, None)

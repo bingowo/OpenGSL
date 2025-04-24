@@ -30,7 +30,7 @@ def dgl_graph_to_torch_sparse(dgl_graph):
     values = dgl_graph.edata['w'].cpu().detach()
     rows_, cols_ = dgl_graph.edges()
     indices = torch.cat((torch.unsqueeze(rows_, 0), torch.unsqueeze(cols_, 0)), 0).cpu()
-    torch_sparse_mx = torch.sparse.FloatTensor(indices, values)
+    torch_sparse_mx = torch.sparse_coo_tensor(indices, values, device='cuda')
     return torch_sparse_mx
 
 
